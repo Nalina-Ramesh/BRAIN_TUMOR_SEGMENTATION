@@ -1,0 +1,21 @@
+{
+  "source": "Defaults of kaggle_2_train_eval.py. Edit this file if your training run used different settings.",
+  "dataset": "BraTS 2023 adult glioma (GLI) training data, patient-level 70/15/15 train/validation/test split",
+  "architecture": "3D U-Net, 5 resolution levels (16-32-64-128-256 channels), InstanceNorm + LeakyReLU, transposed-convolution decoder, skip connections by concatenation",
+  "input": "4 channels (FLAIR, T1, T1 contrast, T2), patches of 128x128x128 voxels",
+  "output": "3 channels with sigmoid: whole tumor (WT), tumor core (TC), enhancing tumor (ET)",
+  "loss": "Binary cross-entropy + soft Dice (Dice computed per region over the batch)",
+  "optimizer": "AdamW, learning rate 3e-4, weight decay 1e-4, gradient clipping at norm 1.0, mixed precision (fp16)",
+  "scheduler": "Polynomial decay of the learning rate: (1 - epoch/total_epochs)^0.9",
+  "epochs": 60,
+  "batch_size": 2,
+  "preprocessing": [
+    "Clip each sequence to its 0.5-99.5 percentile inside the brain",
+    "Z-score normalization inside the brain, background fixed at 0",
+    "Crop to the brain bounding box",
+    "8-bit quantization of normalized intensities (range -3 to 6)"
+  ],
+  "augmentation": ["Random flips on all axes", "Random 90-degree axial rotations", "Intensity scale and shift", "Gaussian noise"],
+  "inference": "Sliding window (128^3, 50% overlap, Gaussian weighting), optional flip test-time augmentation, threshold 0.5",
+  "evaluation": "Dice per region (WT, TC, ET) on full volumes, computed on the validation and test splits during training"
+}
