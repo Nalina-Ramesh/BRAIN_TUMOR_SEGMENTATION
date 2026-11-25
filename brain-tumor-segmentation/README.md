@@ -83,14 +83,22 @@ Open http://localhost:5173. If the backend is not on port 8000, set `VITE_API_UR
 | `GET /api/results`, `GET /api/results/{id}` | list sessions, one session (status, stats, warnings) |
 | `GET /api/results/{id}/mask` | predicted label map, `.nii.gz`, original shape and affine |
 | `GET /api/results/{id}/overlay` | overlay PNG (three planes) |
-| `GET /api/results/{id}/slice` | one slice as PNG (`plane`, `index`, `view`, `modality`, `labels`, `style`) |
+| `GET /api/results/{id}/slice` | one slice as PNG (`plane`, `index`, `view` including `comparison`, `modality`, `labels`, `style`) |
+| `POST /api/results/{id}/compare` | compare an uploaded, aligned reference mask with the prediction |
 | `GET /api/results/{id}/summary` | JSON summary export |
 | `DELETE /api/results/{id}` | delete a result |
 | `GET /api/session`, `GET /api/training-info` | dashboard counter, text for "About the Model" |
 
 Mask labels: 1 necrotic core, 2 edema, 3 enhancing tumor. Whole tumor = 1+2+3, tumor core = 1+3.
 Volumes are computed from the voxel spacing in the scan header and shown in mL only when the spacing is valid.
-Dice and IoU are **not** shown for uploaded scans because there is no ground truth for them.
+On a completed result, upload the matching ground-truth `.nii` or `.nii.gz` mask in the comparison section to see
+whole-tumor Dice, IoU, precision, sensitivity, and voxel accuracy, plus a high-contrast overlay. Yellow marks voxels
+included in both masks, magenta marks prediction-only voxels, and cyan marks reference-only (missed) voxels. The mask
+must share the original MRI's voxel grid; register/resample it first if needed. BraTS label 4 is normalized to label 3.
+Use the comparison-layer controls to show all regions, a transparent overlay, prediction, ground truth, overlap,
+missed regions, or extra predictions individually. The transparent overlay keeps the MRI visible with translucent
+pink prediction and cyan ground-truth masks; overlaps blend the two colors.
+Voxel accuracy includes background and can be misleading for small tumors, so prioritize Dice and IoU.
 
 ## 5. Testing
 
@@ -131,3 +139,10 @@ and the user interface in a browser. `scripts/smoke_test.py` automates most of t
 - *GPU out of memory*: close other GPU programs, or run on CPU with `CUDA_VISIBLE_DEVICES=-1`.
 - *Results look wrong*: check the warnings on the result page (voxel size, skull stripping) and open `mask.nii.gz`
   over your scans in 3D Slicer to compare.
+
+
+if we need any examples where we need to use the images to test the working we can use 
+`https://www.kaggle.com/datasets/darksteeldragon/brats2020-nifti-format-for-deepmedic`
+
+here we will have to download -FLAIR -T1 -T1C -T2 seperately and use it to give as an example 
+

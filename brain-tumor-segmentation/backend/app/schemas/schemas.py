@@ -47,6 +47,7 @@ class ResultDetail(ResultSummary):
     dims: Optional[Dict[str, Any]] = None
     stats: Optional[Dict[str, Any]] = None
     views: Optional[Dict[str, Any]] = None
+    comparison: Optional[Dict[str, Any]] = None
     device: Optional[str] = None
     used_tta: Optional[bool] = None
 

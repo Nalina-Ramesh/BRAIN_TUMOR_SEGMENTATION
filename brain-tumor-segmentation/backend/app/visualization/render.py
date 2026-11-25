@@ -64,6 +64,44 @@ def composite(gray, mask, opacity):
     return Image.alpha_composite(base, Image.fromarray(m, "RGBA"))
 
 
+def comparison_image(vol, predicted, reference, plane, index, zooms, mode="all"):
+    gray = gray_image(vol, plane, index, zooms).convert("RGBA")
+    pred = plane_slice(predicted, plane, index)
+    truth = plane_slice(reference, plane, index)
+    rgba = np.zeros(pred.shape + (4,), np.uint8)
+    both = (pred > 0) & (truth > 0)
+    predicted_only = (pred > 0) & (truth == 0)
+    reference_only = (pred == 0) & (truth > 0)
+    if mode == "all":
+        rgba[both] = (255, 225, 0, 255)
+        rgba[predicted_only] = (255, 0, 220, 255)
+        rgba[reference_only] = (0, 225, 255, 255)
+    elif mode == "transparent":
+        predicted_rgba = np.zeros(pred.shape + (4,), np.uint8)
+        reference_rgba = np.zeros(pred.shape + (4,), np.uint8)
+        predicted_rgba[pred > 0] = (255, 45, 149, 150)
+        reference_rgba[truth > 0] = (0, 216, 255, 150)
+        size = display_size(pred.shape, plane_zoom(zooms, plane))
+        reference_layer = Image.fromarray(
+            np.ascontiguousarray(orient(reference_rgba, plane)), "RGBA").resize(size, Image.NEAREST)
+        predicted_layer = Image.fromarray(
+            np.ascontiguousarray(orient(predicted_rgba, plane)), "RGBA").resize(size, Image.NEAREST)
+        return Image.alpha_composite(Image.alpha_composite(gray, reference_layer), predicted_layer)
+    elif mode == "predicted":
+        rgba[pred > 0] = (255, 0, 220, 255)
+    elif mode == "ground_truth":
+        rgba[truth > 0] = (0, 225, 255, 255)
+    elif mode == "overlap":
+        rgba[both] = (255, 225, 0, 255)
+    elif mode == "missed":
+        rgba[reference_only] = (0, 225, 255, 255)
+    elif mode == "extra":
+        rgba[predicted_only] = (255, 0, 220, 255)
+    size = display_size(pred.shape, plane_zoom(zooms, plane))
+    overlay = Image.fromarray(np.ascontiguousarray(orient(rgba, plane)), "RGBA").resize(size, Image.NEAREST)
+    return Image.alpha_composite(gray, overlay)
+
+
 def to_png(img):
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=False)

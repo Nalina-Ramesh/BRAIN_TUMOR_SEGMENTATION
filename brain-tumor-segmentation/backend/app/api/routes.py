@@ -8,13 +8,15 @@ from typing import List, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
+import numpy as np
 
 import config
 from app import storage
 from app.inference.engine import engine
 from app.inference.pipeline import run_job
+from app.postprocessing.comparison import compare_masks
 from app.preprocessing.nifti import (UNSUPPORTED_MESSAGE, ScanError, check_magic, extension_of,
-                                     safe_display_name)
+                                     load_label_mask, load_scan, safe_display_name)
 from app.schemas.schemas import (Health, JobAccepted, ModelInfo, ResultDetail, ResultSummary, SessionInfo)
 from app.visualization import render
 
@@ -54,8 +56,8 @@ def session_info():
     return SessionInfo(processed_this_session=session["processed"], stored_results=len(storage.list_meta()))
 
 
-async def _save_upload(up: UploadFile, role: str, dest_dir):
-    label = ROLE_LABELS[role]
+async def _save_upload(up: UploadFile, role: str, dest_dir, label=None):
+    label = label or ROLE_LABELS[role]
     ext = extension_of(up.filename)
     if ext is None:
         raise HTTPException(400, f"{label}: {UNSUPPORTED_MESSAGE}")
@@ -142,11 +144,42 @@ def _completed(rid):
     return meta
 
 
+@router.post("/results/{rid}/compare")
+async def compare_reference_mask(rid: str, mask: UploadFile = File(...)):
+    meta = _completed(rid)
+    if extension_of(mask.filename) is None:
+        raise HTTPException(400, UNSUPPORTED_MESSAGE)
+    config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    temp_path = config.RESULTS_DIR / f"{uuid.uuid4().hex}.nii"
+    try:
+        temp_path = await _save_upload(mask, "reference", config.RESULTS_DIR, "Reference mask")
+        try:
+            reference, reference_affine = load_label_mask(temp_path)
+            predicted_grid = load_scan(storage.result_dir(rid) / "mask.nii.gz")
+        except ScanError as e:
+            raise HTTPException(400, str(e))
+        predicted = storage.load_volumes(rid)[1]
+        if reference.shape != predicted.shape:
+            raise HTTPException(400, "The reference mask dimensions do not match this segmentation's voxel grid.")
+        if not np.allclose(reference_affine, predicted_grid.affine, atol=0.05):
+            raise HTTPException(400, "The reference mask is not aligned to this scan's voxel grid. "
+                                     "Resample/register it to the original MRI before comparing.")
+
+        metrics = compare_masks(predicted, reference)
+        storage.save_reference_mask(rid, reference)
+        comparison = {"metrics": metrics, "labels": "whole_tumor"}
+        storage.update_meta(rid, comparison=comparison)
+        return comparison
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
 @router.get("/results/{rid}/slice")
 def get_slice(rid: str, plane: Literal["axial", "coronal", "sagittal"] = "axial", index: int = Query(0, ge=0),
-              view: Literal["original", "mask", "overlay"] = "original", modality: int = Query(0, ge=0, le=3),
+              view: Literal["original", "mask", "overlay", "comparison"] = "original", modality: int = Query(0, ge=0, le=3),
               labels: str = "1,2,3", style: Literal["region", "single"] = "region",
-              opacity: float = Query(0.5, ge=0, le=1)):
+              opacity: float = Query(0.5, ge=0, le=1),
+              comparison_mode: Literal["all", "transparent", "predicted", "ground_truth", "overlap", "missed", "extra"] = "all"):
     meta = _completed(rid)
     shape, zooms = meta["views"]["shape"], meta["views"]["zooms"]
     if index >= render.plane_count(shape, plane):
@@ -160,10 +193,16 @@ def get_slice(rid: str, plane: Literal["axial", "coronal", "sagittal"] = "axial"
         img = render.gray_image(disp[modality], plane, index, zooms)
     elif view == "mask":
         img = render.mask_image(lab, plane, index, zooms, wanted, style)
+    elif view == "comparison":
+        if not meta.get("comparison"):
+            raise HTTPException(409, "Upload a reference mask before requesting a comparison view.")
+        img = render.comparison_image(disp[modality], lab, storage.load_reference_mask(rid),
+                                     plane, index, zooms, comparison_mode)
     else:
         img = render.composite(render.gray_image(disp[modality], plane, index, zooms),
                                render.mask_image(lab, plane, index, zooms, wanted, style), opacity)
-    return Response(render.to_png(img), media_type="image/png", headers={"Cache-Control": "private, max-age=600"})
+    cache_control = "private, no-store" if view == "comparison" else "private, max-age=600"
+    return Response(render.to_png(img), media_type="image/png", headers={"Cache-Control": cache_control})
 
 
 @router.get("/results/{rid}/mask")

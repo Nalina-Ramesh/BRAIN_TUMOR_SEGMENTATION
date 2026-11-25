@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Download, FileJson, FileImage, AlertTriangle, Loader2 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import SliceViewer from "../components/SliceViewer.jsx";
+import MaskComparison from "../components/MaskComparison.jsx";
 import StatTile from "../components/StatTile.jsx";
 import ProcessingTimeline from "../components/ProcessingTimeline.jsx";
 import { downloadUrl, errorMessage, getResult } from "../services/api.js";
@@ -63,7 +64,9 @@ export default function ResultDetail() {
       )}
       {s.tumor_voxels === 0 && <div className="rounded-xl border border-navy-200 bg-white p-4 text-sm text-navy-700">The model did not find a tumor region in this scan.</div>}
 
-      <SliceViewer result={res} />
+      <MaskComparison id={id} comparison={res.comparison} onCompared={(comparison) => setRes((current) => ({ ...current, comparison }))} />
+
+      <SliceViewer result={res} hasComparison={Boolean(res.comparison)} />
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile label="Predicted tumor volume" value={fmt(s.volume_ml, 1, " mL")} hint={s.volume_ml == null ? "Voxel spacing not valid" : "Whole tumor"} />

@@ -22,6 +22,11 @@ export const getSession = () => api.get("/session").then((r) => r.data);
 export const listResults = () => api.get("/results").then((r) => r.data);
 export const getResult = (id) => api.get(`/results/${id}`).then((r) => r.data);
 export const deleteResult = (id) => api.delete(`/results/${id}`);
+export function compareReferenceMask(id, file) {
+  const form = new FormData();
+  form.append("mask", file);
+  return api.post(`/results/${id}/compare`, form).then((r) => r.data);
+}
 
 export function startSegmentation(files, tta, onUploadProgress) {
   const form = new FormData();
@@ -35,7 +40,7 @@ export function startSegmentation(files, tta, onUploadProgress) {
 
 export const downloadUrl = (id, kind) => `${API_ROOT}/api/results/${id}/${kind}`; // mask | overlay | summary
 
-export function sliceUrl(id, { plane, index, view, modality = 0, labels = [1, 2, 3], style = "region", opacity = 0.5 }) {
-  const q = new URLSearchParams({ plane, index, view, modality, labels: labels.join(","), style, opacity });
+export function sliceUrl(id, { plane, index, view, modality = 0, labels = [1, 2, 3], style = "region", opacity = 0.5, comparisonMode = "all" }) {
+  const q = new URLSearchParams({ plane, index, view, modality, labels: labels.join(","), style, opacity, comparison_mode: comparisonMode });
   return `${API_ROOT}/api/results/${id}/slice?${q}`;
 }

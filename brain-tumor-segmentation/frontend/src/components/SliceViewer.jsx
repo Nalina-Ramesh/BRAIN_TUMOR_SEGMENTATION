@@ -9,6 +9,24 @@ const REGIONS = [
   { id: 2, name: "Edema", color: "#3fb68b" },
 ];
 const MAGENTA = "#d946ef";
+const COMPARISON_VIEWS = [
+  ["all", "All"],
+  ["transparent", "Transparent overlay"],
+  ["predicted", "Predicted"],
+  ["ground_truth", "Ground truth"],
+  ["overlap", "Overlap"],
+  ["missed", "Missed"],
+  ["extra", "Extra prediction"],
+];
+const COMPARISON_LEGENDS = {
+  all: [["#ffe100", "Overlap"], ["#ff00dc", "Prediction only"], ["#00e1ff", "Reference only"]],
+  transparent: [["#ff2d95", "Predicted tumor"], ["#00d8ff", "Ground-truth tumor"]],
+  predicted: [["#ff00dc", "Predicted tumor"]],
+  ground_truth: [["#00e1ff", "Ground-truth tumor"]],
+  overlap: [["#ffe100", "Present in both masks"]],
+  missed: [["#00e1ff", "Missed by prediction"]],
+  extra: [["#ff00dc", "Predicted only"]],
+};
 
 function Panel({ title, children }) {
   return (
@@ -21,7 +39,7 @@ function Panel({ title, children }) {
 const fill = "absolute inset-0 h-full w-full object-contain select-none";
 
 /** Original / predicted mask / overlay, synchronized. All pixels come from the backend (real model output). */
-export default function SliceViewer({ result }) {
+export default function SliceViewer({ result, hasComparison = false }) {
   const { id, views } = result;
   const [plane, setPlane] = useState("axial");
   const [index, setIndex] = useState({ ...views.default_slices });
@@ -29,6 +47,7 @@ export default function SliceViewer({ result }) {
   const [opacity, setOpacity] = useState(0.55);
   const [style, setStyle] = useState("single");
   const [labels, setLabels] = useState([1, 2, 3]);
+  const [comparisonMode, setComparisonMode] = useState("all");
 
   const total = views.plane_counts[plane];
   const i = index[plane];
@@ -37,7 +56,8 @@ export default function SliceViewer({ result }) {
   const urls = useMemo(() => ({
     original: sliceUrl(id, { plane, index: i, view: "original", modality }),
     mask: sliceUrl(id, { plane, index: i, view: "mask", style, labels }),
-  }), [id, plane, i, modality, style, labels]);
+    comparison: hasComparison ? sliceUrl(id, { plane, index: i, view: "comparison", modality, comparisonMode }) : null,
+  }), [id, plane, i, modality, style, labels, comparisonMode, hasComparison]);
 
   const toggle = (rid) => setLabels((l) => (l.includes(rid) ? l.filter((x) => x !== rid) : [...l, rid].sort()));
   const onKey = (e) => {
@@ -62,14 +82,38 @@ export default function SliceViewer({ result }) {
         </label>
       </div>
 
-      <div tabIndex={0} onKeyDown={onKey} aria-label="Use arrow keys to change slice" className="mt-4 grid gap-4 rounded-xl sm:grid-cols-3">
+      <div tabIndex={0} onKeyDown={onKey} aria-label="Use arrow keys to change slice" className={`mt-4 grid gap-4 rounded-xl ${hasComparison ? "sm:grid-cols-2 xl:grid-cols-4" : "sm:grid-cols-3"}`}>
         <Panel title="Original MRI"><img src={urls.original} alt={`Original ${plane} slice ${i + 1}`} className={fill} draggable={false} /></Panel>
         <Panel title="Predicted mask"><img src={urls.mask} alt={`Predicted mask, ${plane} slice ${i + 1}`} className={fill} draggable={false} /></Panel>
         <Panel title="Overlay">
           <img src={urls.original} alt="" className={fill} draggable={false} />
           <img src={urls.mask} alt={`Overlay, ${plane} slice ${i + 1}`} className={fill} style={{ opacity }} draggable={false} />
         </Panel>
+        {hasComparison && <Panel title="Mask overlap">
+          <img src={urls.comparison} alt={`Reference and prediction agreement on ${plane} slice ${i + 1}`} className={fill} draggable={false} />
+        </Panel>}
       </div>
+      {hasComparison && <div className="mt-4 space-y-3 border-t border-navy-100 pt-4">
+        <div>
+          <p className="label">Show comparison layer</p>
+          <div role="group" aria-label="Comparison layer" className="mt-2 flex flex-wrap gap-2">
+            {COMPARISON_VIEWS.map(([key, name]) => (
+              <button key={key} onClick={() => setComparisonMode(key)} aria-pressed={comparisonMode === key}
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold transition ${comparisonMode === key ? "border-navy-300 bg-white text-navy-900 shadow-sm" : "border-navy-100 bg-navy-50 text-navy-500 hover:bg-white"}`}>
+                {name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-navy-600" aria-label="Comparison overlay legend">
+          {COMPARISON_LEGENDS[comparisonMode].map(([color, label]) => (
+            <span key={label} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />{label}</span>
+          ))}
+        </div>
+        {comparisonMode === "transparent" && <p className="text-xs text-navy-500">
+          The MRI stays visible underneath; overlapping pink and cyan masks blend together.
+        </p>}
+      </div>}
 
       <div className="mt-4 flex items-center gap-3">
         <button className="btn-secondary !px-2.5" onClick={() => setI(i - 1)} disabled={i <= 0} aria-label="Previous slice"><ChevronLeft className="h-4 w-4" /></button>

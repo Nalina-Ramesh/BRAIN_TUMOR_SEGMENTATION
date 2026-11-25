@@ -10,7 +10,7 @@ import numpy as np
 import config
 
 ALLOWED_EXTENSIONS = (".nii.gz", ".nii")
-UNSUPPORTED_MESSAGE = "Unsupported file format. Please upload an MRI scan in .nii or .nii.gz format only."
+UNSUPPORTED_MESSAGE = "Unsupported file format. Please upload a NIfTI image in .nii or .nii.gz format only."
 
 
 class ScanError(ValueError):
@@ -99,6 +99,41 @@ def load_scan(path):
     arr = np.nan_to_num(np.asarray(reoriented.dataobj, dtype=np.float32))
     return Scan(arr, reoriented.affine, _zooms_from_affine(reoriented.affine), orig_affine,
                 tuple(img.shape), _zooms_from_affine(orig_affine), tuple(nib.aff2axcodes(orig_affine)), back)
+
+
+def load_label_mask(path):
+    """Load a discrete NIfTI label map and reorient it without interpolating labels."""
+    import nibabel as nib
+    from nibabel import orientations as ori
+    try:
+        img = nib.load(str(path))
+        shape = tuple(img.shape)
+        if len(shape) > 3 and all(s == 1 for s in shape[3:]):
+            img = nib.Nifti1Image(np.asarray(img.dataobj).reshape(shape[:3]), img.affine)
+        if len(img.shape) != 3:
+            raise ScanError(f"Expected a 3D mask but the file has shape {shape}.")
+        if not np.isfinite(img.affine).all() or abs(np.linalg.det(img.affine[:3, :3])) < 1e-9:
+            raise ScanError("The mask header has an invalid orientation matrix (affine).")
+        if any(s < config.MIN_DIM or s > config.MAX_DIM for s in img.shape):
+            raise ScanError(f"Unsupported mask size {tuple(img.shape)}. Each dimension must be between "
+                            f"{config.MIN_DIM} and {config.MAX_DIM} voxels.")
+        data = np.asarray(img.dataobj)
+        if not np.isfinite(data).all() or not np.equal(data, np.floor(data)).all():
+            raise ScanError("The segmentation mask must contain finite integer labels.")
+        if data.min() < 0 or data.max() > 4:
+            raise ScanError("Mask labels must be background 0 and tumor labels 1, 2, 3, or 4.")
+
+        cur = ori.io_orientation(img.affine)
+        target = ori.axcodes2ornt(config.MODEL_ORIENTATION)
+        reoriented = nib.Nifti1Image(data.astype(np.uint8), img.affine).as_reoriented(
+            ori.ornt_transform(cur, target))
+        mask = np.asarray(reoriented.dataobj, dtype=np.uint8)
+        mask[mask == 4] = 3
+        return mask, reoriented.affine
+    except ScanError:
+        raise
+    except Exception as e:
+        raise ScanError(f"The mask could not be read as a NIfTI image ({type(e).__name__}).")
 
 
 def restore_mask(label_lps, scan):

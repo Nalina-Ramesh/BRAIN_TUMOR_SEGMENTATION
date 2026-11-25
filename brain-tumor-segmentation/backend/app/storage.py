@@ -74,6 +74,22 @@ def load_volumes(rid):
     return np.load(d / "disp.npy", mmap_mode="r"), np.load(d / "label.npy", mmap_mode="r")
 
 
+def save_reference_mask(rid, mask):
+    d = result_dir(rid)
+    tmp = d / "reference_mask.npy.tmp"
+    with _lock:
+        try:
+            with tmp.open("wb") as f:
+                np.save(f, mask)
+            os.replace(tmp, d / "reference_mask.npy")
+        finally:
+            tmp.unlink(missing_ok=True)
+
+
+def load_reference_mask(rid):
+    return np.load(result_dir(rid) / "reference_mask.npy", mmap_mode="r")
+
+
 def delete(rid):
     d = result_dir(rid)
     if not d.exists():
